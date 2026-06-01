@@ -2,9 +2,6 @@ use std::env;
 use std::fs;
 use std::path::Path;
 use std::io::Read;
-
-// Используем трейты для каждого алгоритма отдельно, чтобы избежать конфликтов
-use md5::Digest as DigestMd5;
 use sha1::Digest as DigestSha1;
 use sha2::Digest as DigestSha2;
 
@@ -15,20 +12,38 @@ const NC: &str = "\x1b[0m";
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    
+    // Проверка аргументов
     if args.len() < 2 {
-        println!("Использование: florenhasher <алгоритм> <файл> ИЛИ scanhash onefile <алг> <файл> ИЛИ scanhash scanall");
+        eprintln!("Использование: florenhasher <действие> [файл] [алгоритм]");
         return;
     }
 
-    match args[1].as_str() {
+    let action = args[1].as_str();
+
+    match action {
         "scanall" => scan_all(),
-        "onefile" => {
-            if args.len() < 4 { println!("Использование: scanhash onefile <алг> <файл>"); return; }
-            check_hash(&args[2].to_lowercase(), &args[3]);
-        }
-        algo => {
-            if args.len() < 3 { println!("Ошибка аргументов"); return; }
-            check_hash(&algo.to_lowercase(), &args[2]);
+        _ => {
+            // Если действие не scanall, ожидаем имя файла
+            if args.len() < 3 {
+                eprintln!("Ошибка: Укажите имя файла для проверки.");
+                return;
+            }
+            let file = &args[2];
+            
+            // Проверка: имя файла начинается с "floren"
+            if !file.to_lowercase().starts_with("floren") {
+                eprintln!("{}Ошибка: Данный файл не является Floren Team скриптом.{}\nОзнакомиться: https://github.com/Floren-Team/florenhasher/blob/main/README.md", RED, NC);
+                return;
+            }
+
+            // Если указан алгоритм (4-й аргумент), берем его, иначе ошибка
+            if args.len() < 4 {
+                eprintln!("Ошибка: Алгоритм не указан (md5, sha1, sha256, sha512).");
+                return;
+            }
+            let algo = args[3].to_lowercase();
+            check_hash(&algo, file);
         }
     }
 }
@@ -37,12 +52,17 @@ fn check_hash(algo: &str, file: &str) {
     let sum_file = format!("{}.{}", file, algo);
     let algo_upper = algo.to_uppercase();
 
-    if !Path::new(file).exists() || !Path::new(&sum_file).exists() {
-        println!("  [SKIP] [{}] {} (Файл или контрольная сумма отсутствуют)", algo_upper, file);
+    // Проверка существования файлов
+    if !Path::new(file).exists() {
+        eprintln!("{}Ошибка: Файл '{}' не найден.{}", RED, file, NC);
+        return;
+    }
+    if !Path::new(&sum_file).exists() {
+        eprintln!("{}Ошибка: Нет хеш-файла '{}'.{}", RED, sum_file, NC);
         return;
     }
 
-    let content = fs::read_to_string(&sum_file).unwrap_or_default();
+    let content = fs::read_to_string(&sum_file).expect("Не удалось прочитать хеш-файл");
     let expected_hash = content.split_whitespace().next().unwrap_or("").to_lowercase();
     let actual_hash = compute_hash(file, algo);
     let rid = extract_rid(&content);
@@ -58,7 +78,7 @@ fn check_hash(algo: &str, file: &str) {
             println!("  [{YELLOW}OK{NC}] [{algo_upper}] {file} (Хеш верный, {YELLOW}RID: Отсутствует{NC})");
         }
     } else {
-        println!("  [{RED}FAIL{NC}] [{algo_upper}] {file} (Ошибка хеша! Ожидалось: {expected_hash}, получено: {actual_hash})");
+        println!("  [{RED}FAIL{NC}] [{algo_upper}] {file} (Ошибка хеша!)");
     }
 }
 
@@ -72,7 +92,7 @@ fn compute_hash(file_path: &str, algo: &str) -> String {
         "sha1"   => format!("{:x}", sha1::Sha1::digest(&buffer)),
         "sha256" => format!("{:x}", sha2::Sha256::digest(&buffer)),
         "sha512" => format!("{:x}", sha2::Sha512::digest(&buffer)),
-        _ => "неподдерживаемый_алгоритм".to_string(),
+        _ => "неподдерживаемый".to_string(),
     }
 }
 
@@ -89,14 +109,31 @@ fn is_expired(rid: &str) -> bool {
 
 fn scan_all() {
     println!("Запуск полной проверки...");
+    
     let paths = fs::read_dir(".").unwrap();
+    let mut files_found = false;
+    
     for path in paths.filter_map(|e| e.ok()) {
         let name = path.file_name().into_string().unwrap();
+        
+        // Перевіряємо, чи є файл контрольною сумою
         if name.ends_with(".md5") || name.ends_with(".sha1") || name.ends_with(".sha256") || name.ends_with(".sha512") {
+            files_found = true;
             let parts: Vec<&str> = name.split('.').collect();
             let algo = parts.last().unwrap();
             let base = parts[..parts.len() - 1].join(".");
-            check_hash(algo, &base);
+            
+            // Додаткова перевірка: чи починається файл з "floren"
+            if base.to_lowercase().starts_with("floren") {
+                check_hash(algo, &base);
+            }
         }
+    }
+
+    if !files_found {
+        eprintln!(
+            "{}Файлов нет или файлы для другого скрипта. Чтобы запустить команду, скачайте скрипты с GitHub: https://github.com/Floren-Team{}",
+            RED, NC
+        );
     }
 }
