@@ -3,7 +3,8 @@ use std::fs;
 use std::path::Path;
 use std::io::Read;
 
-// Подключаем трейт Digest для всех алгоритмов
+// Используем трейты для каждого алгоритма отдельно, чтобы избежать конфликтов
+use md5::Digest as DigestMd5;
 use sha1::Digest as DigestSha1;
 use sha2::Digest as DigestSha2;
 
@@ -15,18 +16,18 @@ const NC: &str = "\x1b[0m";
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        println!("Використання: scanhash <алгоритм> <файл> АБО scanhash onefile <алг> <файл> АБО scanhash scanall");
+        println!("Использование: florenhasher <алгоритм> <файл> ИЛИ scanhash onefile <алг> <файл> ИЛИ scanhash scanall");
         return;
     }
 
     match args[1].as_str() {
         "scanall" => scan_all(),
         "onefile" => {
-            if args.len() < 4 { println!("Використання: scanhash onefile <алг> <файл>"); return; }
+            if args.len() < 4 { println!("Использование: scanhash onefile <алг> <файл>"); return; }
             check_hash(&args[2].to_lowercase(), &args[3]);
         }
         algo => {
-            if args.len() < 3 { println!("Помилка аргументів"); return; }
+            if args.len() < 3 { println!("Ошибка аргументов"); return; }
             check_hash(&algo.to_lowercase(), &args[2]);
         }
     }
@@ -37,7 +38,7 @@ fn check_hash(algo: &str, file: &str) {
     let algo_upper = algo.to_uppercase();
 
     if !Path::new(file).exists() || !Path::new(&sum_file).exists() {
-        println!("  [SKIP] [{}] {} (Файл або контрольна сума відсутні)", algo_upper, file);
+        println!("  [SKIP] [{}] {} (Файл или контрольная сумма отсутствуют)", algo_upper, file);
         return;
     }
 
@@ -49,33 +50,31 @@ fn check_hash(algo: &str, file: &str) {
     if actual_hash == expected_hash {
         if let Some(r) = rid {
             if is_expired(&r) {
-                println!("  [{RED}EXPIRED{NC}] [{algo_upper}] {file} (Хеш вірний, але RID {r} застарів!)");
+                println!("  [{RED}EXPIRED{NC}] [{algo_upper}] {file} (Хеш верный, но RID {r} устарел!)");
             } else {
-                println!("  [{GREEN}OK{NC}] [{algo_upper}] {file} (Хеш вірний, RID: {r})");
+                println!("  [{GREEN}OK{NC}] [{algo_upper}] {file} (Хеш верный, RID: {r})");
             }
         } else {
-            println!("  [{YELLOW}OK{NC}] [{algo_upper}] {file} (Хеш вірний, {YELLOW}RID: Відсутній{NC})");
+            println!("  [{YELLOW}OK{NC}] [{algo_upper}] {file} (Хеш верный, {YELLOW}RID: Отсутствует{NC})");
         }
     } else {
-        println!("  [{RED}FAIL{NC}] [{algo_upper}] {file} (Помилка хешу! Очікував: {expected_hash}, отримав: {actual_hash})");
+        println!("  [{RED}FAIL{NC}] [{algo_upper}] {file} (Ошибка хеша! Ожидалось: {expected_hash}, получено: {actual_hash})");
     }
 }
 
 fn compute_hash(file_path: &str, algo: &str) -> String {
-    let mut file = fs::File::open(file_path).expect("Не вдалося відкрити файл");
+    let mut file = fs::File::open(file_path).expect("Не удалось открыть файл");
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).expect("Не вдалося прочитати файл");
+    file.read_to_end(&mut buffer).expect("Не удалось прочитать файл");
 
-    // Використовуємо методи прямого виклику через Digest
     match algo {
         "md5"    => format!("{:x}", md5::compute(&buffer)),
         "sha1"   => format!("{:x}", sha1::Sha1::digest(&buffer)),
         "sha256" => format!("{:x}", sha2::Sha256::digest(&buffer)),
         "sha512" => format!("{:x}", sha2::Sha512::digest(&buffer)),
-        _ => "unsupported".to_string(),
+        _ => "неподдерживаемый_алгоритм".to_string(),
     }
 }
-
 
 fn extract_rid(content: &str) -> Option<String> {
     let start = content.find("[RID:")?;
@@ -89,7 +88,7 @@ fn is_expired(rid: &str) -> bool {
 }
 
 fn scan_all() {
-    println!("Запуск повної перевірки...");
+    println!("Запуск полной проверки...");
     let paths = fs::read_dir(".").unwrap();
     for path in paths.filter_map(|e| e.ok()) {
         let name = path.file_name().into_string().unwrap();
